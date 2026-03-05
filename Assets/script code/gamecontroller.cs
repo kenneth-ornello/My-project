@@ -30,10 +30,8 @@ public class GameController : MonoBehaviour
 
     void Update()
     {
-        // Toggle ON = Free Roam | Toggle OFF = Menu/Stationary Mode
         bool isFreeRoam = movementToggle != null && movementToggle.isOn;
 
-        // Manage UI interactability based on the toggle state
         if (startDropdown != null) startDropdown.interactable = !isFreeRoam;
         if (joystick != null) joystick.gameObject.SetActive(isFreeRoam);
 
@@ -93,20 +91,16 @@ public class GameController : MonoBehaviour
         {
             bool isFreeRoam = movementToggle != null && movementToggle.isOn;
 
-            // 1. If NOT in Free Roam, Teleport to the selected "Your Location"
             if (!isFreeRoam && startDropdown != null)
             {
                 int startIndex = startDropdown.value;
-                Agent.enabled = false; 
+                Agent.enabled = false;
                 Agent.transform.position = stationLocations[startIndex].position;
                 Agent.enabled = true;
             }
-            // 2. If IN Free Roam, we skip teleport and walk from the current spot automatically
 
-            // 3. Always turn off Free Roam once navigation starts to let AI drive
             if (movementToggle != null) movementToggle.isOn = false;
 
-            // 4. Set the destination
             int destinationIndex = destinationDropdown.value;
             Agent.isStopped = false;
             Agent.SetDestination(stationLocations[destinationIndex].position);
@@ -118,6 +112,7 @@ public class GameController : MonoBehaviour
 
     void HandleRotation()
     {
+        // LAPTOP: Right-Click remains active for testing
         if (Input.GetMouseButton(1))
         {
             float mouseX = Input.GetAxis("Mouse X") * manualRotateSpeed * Time.deltaTime;
@@ -128,16 +123,22 @@ public class GameController : MonoBehaviour
             mainCam.transform.localRotation = Quaternion.Euler(xRotation, 0, 0);
         }
 
+        // PHONE: Optimized for mobile recording issues
         for (int i = 0; i < Input.touchCount; i++)
         {
             Touch touch = Input.GetTouch(i);
-            if (!EventSystem.current.IsPointerOverGameObject(touch.fingerId))
+
+            // SCREEN SPLIT: Only rotate if the touch is on the right 60% of the screen
+            // This prevents the left thumb (joystick) from flipping the camera
+            if (touch.position.x > Screen.width * 0.4f && !EventSystem.current.IsPointerOverGameObject(touch.fingerId))
             {
                 if (touch.phase == TouchPhase.Moved)
                 {
-                    float hRotation = touch.deltaPosition.x * (manualRotateSpeed * 0.005f);
+                    // REDUCED SENSITIVITY: 0.002f provides a smoother look than 0.005f
+                    float hRotation = touch.deltaPosition.x * (manualRotateSpeed * 0.002f);
                     Agent.transform.Rotate(Vector3.up * hRotation);
-                    float vRotation = touch.deltaPosition.y * (manualRotateSpeed * 0.005f);
+
+                    float vRotation = touch.deltaPosition.y * (manualRotateSpeed * 0.002f);
                     xRotation -= vRotation;
                     xRotation = Mathf.Clamp(xRotation, -30f, 45f);
                     mainCam.transform.localRotation = Quaternion.Euler(xRotation, 0, 0);
