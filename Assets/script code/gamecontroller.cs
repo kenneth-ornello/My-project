@@ -24,17 +24,20 @@ public class GameController : MonoBehaviour
     public Transform[] stationLocations;
 
     [Header("Movement Tuning")]
-    // Set this to 2 or 3 in the Inspector for a slow, realistic body turn
-    public float turnSmoothness = 5.0f; 
+    public float turnSmoothness = 5.0f;
 
     private float xRotation = 0f;
 
     void Update()
     {
-        // Toggle ON = Manual Joystick Mode | Toggle OFF = AI Mode
-        bool isManualMode = movementToggle != null && movementToggle.isOn;
+        // Toggle ON = Free Roam | Toggle OFF = Menu/Stationary Mode
+        bool isFreeRoam = movementToggle != null && movementToggle.isOn;
 
-        if (isManualMode)
+        // Manage UI interactability based on the toggle state
+        if (startDropdown != null) startDropdown.interactable = !isFreeRoam;
+        if (joystick != null) joystick.gameObject.SetActive(isFreeRoam);
+
+        if (isFreeRoam)
         {
             HandleManualOverride();
         }
@@ -48,7 +51,6 @@ public class GameController : MonoBehaviour
             }
         }
 
-        // Handles Right-Click (Laptop) and Right-Thumb (Phone)
         HandleRotation();
     }
 
@@ -58,7 +60,6 @@ public class GameController : MonoBehaviour
 
         Vector3 input = new Vector3(joystick.Horizontal, 0, joystick.Vertical);
 
-        // Deadzone of 0.2f prevents "twitchy" movement
         if (input.magnitude > 0.2f)
         {
             if (Agent.isOnNavMesh)
@@ -68,84 +69,80 @@ public class GameController : MonoBehaviour
                 Agent.velocity = Vector3.zero;
             }
 
-            // Calculate direction relative to Camera orientation
             Vector3 camForward = mainCam.transform.forward;
             Vector3 camRight = mainCam.transform.right;
-            camForward.y = 0;
-            camRight.y = 0;
-            camForward.Normalize();
-            camRight.Normalize();
+            camForward.y = 0; camRight.y = 0;
+            camForward.Normalize(); camRight.Normalize();
 
             Vector3 moveDirection = (camForward * input.z + camRight * input.x).normalized;
 
-            // Character turns to face movement direction using turnSmoothness
             if (moveDirection != Vector3.zero)
             {
                 Quaternion targetRotation = Quaternion.LookRotation(moveDirection);
                 Agent.transform.rotation = Quaternion.Slerp(Agent.transform.rotation, targetRotation, Time.deltaTime * turnSmoothness);
             }
 
-            // Move the agent forward at manualMoveSpeed
             Agent.Move(moveDirection * manualMoveSpeed * Time.deltaTime);
-
             if (pathLine != null) pathLine.enabled = false;
+        }
+    }
+
+    public void StartNavigation()
+    {
+        if (Agent != null && destinationDropdown != null)
+        {
+            bool isFreeRoam = movementToggle != null && movementToggle.isOn;
+
+            // 1. If NOT in Free Roam, Teleport to the selected "Your Location"
+            if (!isFreeRoam && startDropdown != null)
+            {
+                int startIndex = startDropdown.value;
+                Agent.enabled = false; 
+                Agent.transform.position = stationLocations[startIndex].position;
+                Agent.enabled = true;
+            }
+            // 2. If IN Free Roam, we skip teleport and walk from the current spot automatically
+
+            // 3. Always turn off Free Roam once navigation starts to let AI drive
+            if (movementToggle != null) movementToggle.isOn = false;
+
+            // 4. Set the destination
+            int destinationIndex = destinationDropdown.value;
+            Agent.isStopped = false;
+            Agent.SetDestination(stationLocations[destinationIndex].position);
+
+            if (uiPanel != null) uiPanel.SetActive(false);
+            if (pathLine != null) pathLine.enabled = true;
         }
     }
 
     void HandleRotation()
     {
-        // LAPTOP: Right-Click (Mouse 1) rotation
         if (Input.GetMouseButton(1))
         {
             float mouseX = Input.GetAxis("Mouse X") * manualRotateSpeed * Time.deltaTime;
             Agent.transform.Rotate(Vector3.up * mouseX);
-
             float mouseY = Input.GetAxis("Mouse Y") * manualRotateSpeed * Time.deltaTime;
             xRotation -= mouseY;
             xRotation = Mathf.Clamp(xRotation, -30f, 45f);
             mainCam.transform.localRotation = Quaternion.Euler(xRotation, 0, 0);
         }
 
-        // PHONE: Right-Thumb/Multi-touch rotation
         for (int i = 0; i < Input.touchCount; i++)
         {
             Touch touch = Input.GetTouch(i);
-
             if (!EventSystem.current.IsPointerOverGameObject(touch.fingerId))
             {
                 if (touch.phase == TouchPhase.Moved)
                 {
                     float hRotation = touch.deltaPosition.x * (manualRotateSpeed * 0.005f);
                     Agent.transform.Rotate(Vector3.up * hRotation);
-
                     float vRotation = touch.deltaPosition.y * (manualRotateSpeed * 0.005f);
                     xRotation -= vRotation;
                     xRotation = Mathf.Clamp(xRotation, -30f, 45f);
                     mainCam.transform.localRotation = Quaternion.Euler(xRotation, 0, 0);
                 }
             }
-        }
-    }
-
-    public void StartNavigation()
-    {
-        // Now starts from CURRENT position instead of teleporting to startDropdown
-        if (Agent != null && destinationDropdown != null)
-        {
-            // Switch off manual mode automatically
-            if (movementToggle != null) movementToggle.isOn = false;
-
-            int destinationIndex = destinationDropdown.value;
-
-            // Ensure agent is active and ready to move
-            Agent.enabled = true;
-            Agent.isStopped = false;
-
-            // Set destination from current coordinates
-            Agent.SetDestination(stationLocations[destinationIndex].position);
-
-            if (uiPanel != null) uiPanel.SetActive(false);
-            if (pathLine != null) pathLine.enabled = true;
         }
     }
 
