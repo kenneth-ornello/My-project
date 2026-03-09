@@ -23,10 +23,24 @@ public class GameController : MonoBehaviour
     public float manualRotateSpeed = 150.0f;
     public Transform[] stationLocations;
 
-    [Header("Movement Tuning")]
-    public float turnSmoothness = 5.0f;
+    [Header("Platform Triggers")]
+    public Transform platform1Trigger; // Drag PF1 object here
+    public Transform platform2Trigger; // Drag PF2 object here
+    public float detectionRadius = 3.0f;
+
+    [Header("Platform Detection")]
+    public TrainStationManager stationManager;
 
     private float xRotation = 0f;
+
+    void Start()
+    {
+        if (stationManager != null)
+        {
+            stationManager.playerCurrentPlatform = "";
+            stationManager.UpdateARDisplay(); 
+        }
+    }
 
     void Update()
     {
@@ -50,7 +64,63 @@ public class GameController : MonoBehaviour
         }
 
         HandleRotation();
+        
+        // NEW: Check distance as a fallback if triggers fail
+        CheckPlatformDistance();
     }
+
+    // --- UPDATED DETECTION LOGIC ---
+    
+    // Primary Detection: Physics Triggers
+    private void OnTriggerEnter(Collider other)
+    {
+        if (stationManager == null) return;
+
+        if (other.CompareTag("PF1"))
+        {
+            SetPlatform("PF 1");
+            Debug.Log("Physics Trigger: Platform 1");
+        }
+        else if (other.CompareTag("PF2"))
+        {
+            SetPlatform("PF 2");
+            Debug.Log("Physics Trigger: Platform 2");
+        }
+    }
+
+    private void OnTriggerExit(Collider other)
+    {
+        if (stationManager == null) return;
+
+        if (other.CompareTag("PF1") || other.CompareTag("PF2"))
+        {
+            SetPlatform("");
+            Debug.Log("Left Platform Area");
+        }
+    }
+
+    // Secondary Detection: Distance Check (Fallback)
+    void CheckPlatformDistance()
+    {
+        if (stationManager == null || Agent == null) return;
+
+        if (platform1Trigger != null && Vector3.Distance(Agent.transform.position, platform1Trigger.position) < detectionRadius)
+        {
+            if (stationManager.playerCurrentPlatform != "PF 1") SetPlatform("PF 1");
+        }
+        else if (platform2Trigger != null && Vector3.Distance(Agent.transform.position, platform2Trigger.position) < detectionRadius)
+        {
+            if (stationManager.playerCurrentPlatform != "PF 2") SetPlatform("PF 2");
+        }
+    }
+
+    void SetPlatform(string platformName)
+    {
+        stationManager.playerCurrentPlatform = platformName;
+        stationManager.UpdateARDisplay();
+    }
+
+    // --- END DETECTION LOGIC ---
 
     void HandleManualOverride()
     {
@@ -77,7 +147,7 @@ public class GameController : MonoBehaviour
             if (moveDirection != Vector3.zero)
             {
                 Quaternion targetRotation = Quaternion.LookRotation(moveDirection);
-                Agent.transform.rotation = Quaternion.Slerp(Agent.transform.rotation, targetRotation, Time.deltaTime * turnSmoothness);
+                Agent.transform.rotation = Quaternion.Slerp(Agent.transform.rotation, targetRotation, Time.deltaTime * 5.0f);
             }
 
             Agent.Move(moveDirection * manualMoveSpeed * Time.deltaTime);
@@ -112,7 +182,6 @@ public class GameController : MonoBehaviour
 
     void HandleRotation()
     {
-        // LAPTOP: Right-Click remains active for testing
         if (Input.GetMouseButton(1))
         {
             float mouseX = Input.GetAxis("Mouse X") * manualRotateSpeed * Time.deltaTime;
@@ -123,18 +192,13 @@ public class GameController : MonoBehaviour
             mainCam.transform.localRotation = Quaternion.Euler(xRotation, 0, 0);
         }
 
-        // PHONE: Optimized for mobile recording issues
         for (int i = 0; i < Input.touchCount; i++)
         {
             Touch touch = Input.GetTouch(i);
-
-            // SCREEN SPLIT: Only rotate if the touch is on the right 60% of the screen
-            // This prevents the left thumb (joystick) from flipping the camera
             if (touch.position.x > Screen.width * 0.4f && !EventSystem.current.IsPointerOverGameObject(touch.fingerId))
             {
                 if (touch.phase == TouchPhase.Moved)
                 {
-                    // REDUCED SENSITIVITY: 0.002f provides a smoother look than 0.005f
                     float hRotation = touch.deltaPosition.x * (manualRotateSpeed * 0.002f);
                     Agent.transform.Rotate(Vector3.up * hRotation);
 
