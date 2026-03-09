@@ -162,4 +162,4 @@ public class TrainStationManager : MonoBehaviour
         if (currentTrainIndex < 0) currentTrainIndex = filteredTrains.Count - 1;
         ShowCurrentTrain();
     }
-}
+} 

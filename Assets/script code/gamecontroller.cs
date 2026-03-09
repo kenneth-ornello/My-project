@@ -1,7 +1,9 @@
 using UnityEngine;
 using UnityEngine.AI;
-using UnityEngine.UI;
+using UnityEngine.UI; // For Basic UI (Start/Destination)
 using UnityEngine.EventSystems;
+using System.Collections.Generic;
+using TMPro; // For your new Coach Dropdown
 
 public class GameController : MonoBehaviour
 {
@@ -9,8 +11,9 @@ public class GameController : MonoBehaviour
     public Camera mainCam;
 
     [Header("UI Elements")]
-    public Dropdown startDropdown;
-    public Dropdown destinationDropdown;
+    public Dropdown startDropdown;       // Basic UI
+    public Dropdown destinationDropdown; // Basic UI
+    public TMP_Dropdown coachDropdown;   // TextMeshPro (This fix allows dragging your new UI)
     public GameObject uiPanel;
     public LineRenderer pathLine;
     public Toggle movementToggle;
@@ -23,177 +26,145 @@ public class GameController : MonoBehaviour
     public float manualRotateSpeed = 150.0f;
     public Transform[] stationLocations;
 
+    [Header("Manual Coach Setup")]
+    // Drag your specific poles from the Hierarchy into this list
+    public Transform[] platform1Coaches; 
+
     [Header("Platform Triggers")]
     public Transform platform1Trigger; 
     public Transform platform2Trigger; 
-    public float detectionRadius = 10.0f; // Increased default for better mobile detection
+    public float detectionRadius = 10.0f; 
 
     [Header("Platform Detection")]
     public TrainStationManager stationManager;
-
-    private float xRotation = 0f;
 
     void Start()
     {
         if (stationManager != null)
         {
-            // Reset state on launch
             stationManager.playerCurrentPlatform = "";
             stationManager.UpdateARDisplay(); 
         }
+
+        // Listener for Teleporting (Your Location)
+        if (startDropdown != null)
+            startDropdown.onValueChanged.AddListener(delegate { TeleportToStartLocation(); });
+
+        // Listener for Platform Selection (Your Destination)
+        if (destinationDropdown != null)
+            destinationDropdown.onValueChanged.AddListener(delegate { OnDestinationChanged(); });
+
+        // Keep coach dropdown hidden at the start
+        if (coachDropdown != null) coachDropdown.gameObject.SetActive(false);
     }
 
-    void Update()
+    void OnDestinationChanged()
     {
-        bool isFreeRoam = movementToggle != null && movementToggle.isOn;
+        if (destinationDropdown == null) return;
 
-        if (startDropdown != null) startDropdown.interactable = !isFreeRoam;
-        if (joystick != null) joystick.gameObject.SetActive(isFreeRoam);
+        string selectedText = destinationDropdown.options[destinationDropdown.value].text;
 
-        if (isFreeRoam)
+        if (selectedText.Contains("Platform 1"))
         {
-            HandleManualOverride();
+            SetupCoachDropdown(); 
+            coachDropdown.gameObject.SetActive(true); 
         }
         else
         {
-            if (Agent != null && Agent.enabled)
-            {
-                if (Agent.isOnNavMesh) Agent.isStopped = false;
-                if (Agent.hasPath) DrawPathLine();
-                CheckArrival();
-            }
-        }
-
-        HandleRotation();
-        
-        // Secondary check for mobile if triggers are missed
-        CheckPlatformDistance();
-    }
-
-    // --- DETECTION LOGIC ---
-    
-    private void OnTriggerEnter(Collider other)
-    {
-        if (stationManager == null) return;
-
-        // Using .Contains to handle naming variations like "PF1 (Clone)"
-        if (other.CompareTag("PF1") || other.name.Contains("PF1"))
-        {
-            SetPlatform("PF 1");
-        }
-        else if (other.CompareTag("PF2") || other.name.Contains("PF2"))
-        {
-            SetPlatform("PF 2");
+            coachDropdown.gameObject.SetActive(false); 
         }
     }
 
-    private void OnTriggerExit(Collider other)
+    void SetupCoachDropdown()
     {
-        if (stationManager == null) return;
+        if (platform1Coaches == null || coachDropdown == null) return;
 
-        if (other.CompareTag("PF1") || other.CompareTag("PF2"))
+        coachDropdown.ClearOptions();
+        List<string> coachNames = new List<string>();
+
+        foreach (Transform coach in platform1Coaches)
         {
-            // Optional: Uncomment to clear data when walking away
-            // SetPlatform("");
-        }
-    }
-
-    void CheckPlatformDistance()
-    {
-        if (stationManager == null || Agent == null) return;
-
-        // Check PF1
-        if (platform1Trigger != null)
-        {
-            float dist1 = Vector3.Distance(Agent.transform.position, platform1Trigger.position);
-            if (dist1 < detectionRadius && stationManager.playerCurrentPlatform != "PF 1")
-            {
-                SetPlatform("PF 1");
-            }
+            if (coach != null) coachNames.Add(coach.name);
         }
 
-        // Check PF2
-        if (platform2Trigger != null)
-        {
-            float dist2 = Vector3.Distance(Agent.transform.position, platform2Trigger.position);
-            if (dist2 < detectionRadius && stationManager.playerCurrentPlatform != "PF 2")
-            {
-                SetPlatform("PF 2");
-            }
-        }
-    }
-
-    void SetPlatform(string platformName)
-    {
-        if (stationManager == null) return;
-        
-        stationManager.playerCurrentPlatform = platformName;
-        stationManager.UpdateARDisplay();
-        
-        // Debugging for your phone screen
-        if (stationManager.arDisplayLabel != null && !string.IsNullOrEmpty(platformName))
-        {
-            Debug.Log("Switched to " + platformName);
-        }
-    }
-
-    // --- MOVEMENT & NAVIGATION ---
-
-    void HandleManualOverride()
-    {
-        if (Agent == null || joystick == null) return;
-
-        Vector3 input = new Vector3(joystick.Horizontal, 0, joystick.Vertical);
-
-        if (input.magnitude > 0.1f) // Slightly more sensitive for phone joysticks
-        {
-            if (Agent.isOnNavMesh)
-            {
-                Agent.isStopped = true;
-                Agent.ResetPath();
-            }
-
-            Vector3 camForward = mainCam.transform.forward;
-            Vector3 camRight = mainCam.transform.right;
-            camForward.y = 0; camRight.y = 0;
-            camForward.Normalize(); camRight.Normalize();
-
-            Vector3 moveDirection = (camForward * input.z + camRight * input.x).normalized;
-
-            if (moveDirection != Vector3.zero)
-            {
-                Quaternion targetRotation = Quaternion.LookRotation(moveDirection);
-                Agent.transform.rotation = Quaternion.Slerp(Agent.transform.rotation, targetRotation, Time.deltaTime * 8.0f);
-            }
-
-            Agent.Move(moveDirection * manualMoveSpeed * Time.deltaTime);
-        }
+        coachDropdown.AddOptions(coachNames);
     }
 
     public void StartNavigation()
     {
         if (Agent == null || destinationDropdown == null) return;
 
+        Agent.Warp(transform.position);
         if (movementToggle != null) movementToggle.isOn = false;
 
-        int destinationIndex = destinationDropdown.value;
-        Agent.isStopped = false;
-        Agent.SetDestination(stationLocations[destinationIndex].position);
+        Vector3 target;
 
+        if (coachDropdown != null && coachDropdown.gameObject.activeSelf && platform1Coaches.Length > 0)
+        {
+            target = platform1Coaches[coachDropdown.value].position;
+        }
+        else
+        {
+            target = stationLocations[destinationDropdown.value].position;
+        }
+
+        Agent.isStopped = false;
+        Agent.SetDestination(target);
         if (uiPanel != null) uiPanel.SetActive(false);
         if (pathLine != null) pathLine.enabled = true;
     }
 
-    void HandleRotation()
+    public void TeleportToStartLocation()
     {
-        // PC Mouse Rotation
+        if (startDropdown == null || stationLocations == null) return;
+        Vector3 targetPos = stationLocations[startDropdown.value].position;
+        transform.position = targetPos;
+        if (Agent != null && Agent.isOnNavMesh) Agent.Warp(targetPos);
+        if (pathLine != null) pathLine.enabled = false;
+    }
+
+    void Update() 
+    { 
+        bool isFreeRoam = movementToggle != null && movementToggle.isOn;
+        if (joystick != null) joystick.gameObject.SetActive(isFreeRoam);
+        if (isFreeRoam) HandleManualOverride();
+        else if (Agent != null && Agent.enabled && Agent.isOnNavMesh)
+        {
+            if (Agent.hasPath) DrawPathLine();
+            CheckArrival();
+        }
+        HandleRotation();
+        CheckPlatformDistance();
+    }
+
+    void HandleManualOverride() 
+    { 
+        if (Agent == null || joystick == null) return;
+        Vector3 input = new Vector3(joystick.Horizontal, 0, joystick.Vertical);
+        if (input.magnitude > 0.1f)
+        {
+            if (Agent.isOnNavMesh) { Agent.isStopped = true; Agent.ResetPath(); }
+            Vector3 camForward = mainCam.transform.forward;
+            Vector3 camRight = mainCam.transform.right;
+            camForward.y = 0; camRight.y = 0;
+            camForward.Normalize(); camRight.Normalize();
+            Vector3 moveDirection = (camForward * input.z + camRight * input.x).normalized;
+            if (moveDirection != Vector3.zero)
+            {
+                Quaternion targetRotation = Quaternion.LookRotation(moveDirection);
+                Agent.transform.rotation = Quaternion.Slerp(Agent.transform.rotation, targetRotation, Time.deltaTime * 8.0f);
+            }
+            Agent.Move(moveDirection * manualMoveSpeed * Time.deltaTime);
+        }
+    }
+
+    void HandleRotation() 
+    { 
         if (Input.GetMouseButton(1))
         {
             float mouseX = Input.GetAxis("Mouse X") * manualRotateSpeed * Time.deltaTime;
             Agent.transform.Rotate(Vector3.up * mouseX);
         }
-
-        // Mobile Touch Rotation
         for (int i = 0; i < Input.touchCount; i++)
         {
             Touch touch = Input.GetTouch(i);
@@ -208,8 +179,30 @@ public class GameController : MonoBehaviour
         }
     }
 
-    void CheckArrival()
-    {
+    void CheckPlatformDistance() 
+    { 
+        if (stationManager == null || Agent == null) return;
+        if (platform1Trigger != null)
+        {
+            float dist1 = Vector3.Distance(Agent.transform.position, platform1Trigger.position);
+            if (dist1 < detectionRadius && stationManager.playerCurrentPlatform != "PF 1") SetPlatform("PF 1");
+        }
+        if (platform2Trigger != null)
+        {
+            float dist2 = Vector3.Distance(Agent.transform.position, platform2Trigger.position);
+            if (dist2 < detectionRadius && stationManager.playerCurrentPlatform != "PF 2") SetPlatform("PF 2");
+        }
+    }
+
+    void SetPlatform(string p) 
+    { 
+        if (stationManager == null) return;
+        stationManager.playerCurrentPlatform = p;
+        stationManager.UpdateARDisplay();
+    }
+
+    void CheckArrival() 
+    { 
         if (Agent != null && uiPanel != null && !uiPanel.activeSelf)
         {
             if (Agent.isOnNavMesh && !Agent.pathPending && Agent.remainingDistance < 0.8f)
@@ -220,8 +213,8 @@ public class GameController : MonoBehaviour
         }
     }
 
-    void DrawPathLine()
-    {
+    void DrawPathLine() 
+    { 
         if (pathLine == null || !Agent.hasPath) return;
         pathLine.positionCount = Agent.path.corners.Length;
         for (int i = 0; i < Agent.path.corners.Length; i++)
@@ -230,5 +223,12 @@ public class GameController : MonoBehaviour
             point.y += 0.2f;
             pathLine.SetPosition(i, point);
         }
+    }
+
+    private void OnTriggerEnter(Collider other) 
+    { 
+        if (stationManager == null) return;
+        if (other.CompareTag("PF1") || other.name.Contains("PF1")) SetPlatform("PF 1");
+        else if (other.CompareTag("PF2") || other.name.Contains("PF2")) SetPlatform("PF 2");
     }
 }
