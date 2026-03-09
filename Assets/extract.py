@@ -1,16 +1,24 @@
 import pandas as pd
 import os
+import shutil
 
 def generateVidyaviharSchedule():
-    # 1. Define the Absolute Path to your Unity Project
-    data_dir = r"C:\Users\kenneth ornello\My project\Assets\data"
-    if not os.path.exists(data_dir):
-        os.makedirs(data_dir)
+    # 1. Define Paths for both PC development and Mobile bundling
+    # PC Path: Used for Unity Editor testing
+    pc_data_dir = r"C:\Users\kenneth ornello\My project\Assets\data"
+    # Mobile Path: Bundled into the APK for your phone
+    mobile_data_dir = r"C:\Users\kenneth ornello\My project\Assets\StreamingAssets"
+
+    # Ensure both directories exist
+    for directory in [pc_data_dir, mobile_data_dir]:
+        if not os.path.exists(directory):
+            os.makedirs(directory)
     
-    output_path = os.path.join(data_dir, "Vidyavihar_Arrivals_2026.csv")
+    pc_output_path = os.path.join(pc_data_dir, "Vidyavihar_Arrivals_2026.csv")
+    mobile_output_path = os.path.join(mobile_data_dir, "Vidyavihar_Arrivals_2026.csv")
 
     # 2. Hard-coded Verified 2026 Slow Train Data (Central Line)
-    # This data is mapped: PF 1 = Down (Kalyan Side), PF 2 = Up (CSMT Side)
+    # PF 1 = Down (Kalyan Side), PF 2 = Up (CSMT Side)
     data = [
         # --- PLATFORM 1 (DOWN LINE) ---
         ["96601 CTL", "04:45 AM", "PF1", "Titwala (Starts)"],
@@ -57,13 +65,17 @@ def generateVidyaviharSchedule():
         ["97100 CK 10", "10:56 PM", "PF2", "Kurla"]
     ]
 
-    # 3. Create DataFrame and Save to CSV
+    # 3. Create DataFrame and Save with UTF-8-SIG (Handles hidden BOM for Phone reading)
     df = pd.DataFrame(data, columns=["Train_No", "Time", "Platform", "Destination"])
-    df.to_csv(output_path, index=False)
+    
+    # Save to both locations
+    df.to_csv(pc_output_path, index=False, encoding='utf-8-sig')
+    df.to_csv(mobile_output_path, index=False, encoding='utf-8-sig')
     
     print(f"--- SUCCESS ---")
-    print(f"Verified 2026 Schedule Saved: {output_path}")
-    print(f"Total Trains Synced: {len(df)}")
+    print(f"Data Synced to PC: {pc_output_path}")
+    print(f"Data Synced to Mobile: {mobile_output_path}")
+    print(f"Total Trains: {len(df)}")
 
 if __name__ == "__main__":
     generateVidyaviharSchedule()

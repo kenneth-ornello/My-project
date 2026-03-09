@@ -3,38 +3,45 @@ using System.Collections.Generic;
 using System.IO;
 using System.Diagnostics;
 using TMPro;
+using UnityEngine.Networking;
+using System.Collections;
 
 public class TrainStationManager : MonoBehaviour
 {
+    [Header("Mobile Settings")]
+    public string csvFileName = "Vidyavihar_Arrivals_2026.csv";
+    public TextMeshProUGUI arDisplayLabel;
+
+    [Header("PC Debugging Only")]
     public string pythonInterpreterPath = "python";
     public string scriptName = "extract.py";
-    public TextMeshProUGUI arDisplayLabel;
 
     [Tooltip("Type PF 1 or PF 2 here to test without walking")]
     public string playerCurrentPlatform = "";
 
-    private string csvPath;
     private List<string> filteredTrains = new List<string>();
     private int currentTrainIndex = 0;
+    private string csvPath;
 
     void Start()
     {
-        csvPath = Path.Combine(Application.dataPath, "data/Vidyavihar_Arrivals_2026.csv");
+        // Use StreamingAssetsPath for mobile compatibility
+        csvPath = Path.Combine(Application.streamingAssetsPath, csvFileName);
 
-        // FIX: Check if a platform is already set in the Inspector
         if (!string.IsNullOrEmpty(playerCurrentPlatform))
         {
-            // If PF 1 or PF 2 is already typed, load it immediately
             UpdateARDisplay();
         }
-        else
+        else if (arDisplayLabel != null)
         {
-            // Otherwise, show the default walk prompt
-            if (arDisplayLabel != null)
-                arDisplayLabel.text = "Walk to a platform to see timings";
+            arDisplayLabel.text = "Walk to a platform to see timings";
         }
 
-        InvokeRepeating("RunPythonExtractor", 0f, 600f);
+        // Only run Python if we are in the Unity Editor on your PC
+        if (Application.platform == RuntimePlatform.WindowsEditor)
+        {
+            InvokeRepeating("RunPythonExtractor", 0f, 600f);
+        }
     }
 
     void RunPythonExtractor()
@@ -57,27 +64,60 @@ public class TrainStationManager : MonoBehaviour
 
     public void UpdateARDisplay()
     {
-        if (!File.Exists(csvPath)) return;
+        StartCoroutine(LoadCSVOnMobile());
+    }
 
-        // Strip hidden BOM characters
-        string content = File.ReadAllText(csvPath).Replace("\uFEFF", "");
+    // NEW: Coroutine to read file correctly on Android/iOS
+    IEnumerator LoadCSVOnMobile()
+    {
+        string result = "";
+
+        // Android requires WebRequest to look inside the APK
+        if (csvPath.Contains("://") || csvPath.Contains(":///"))
+        {
+            UnityWebRequest www = UnityWebRequest.Get(csvPath);
+            yield return www.SendWebRequest();
+
+            if (www.result == UnityWebRequest.Result.Success)
+            {
+                result = www.downloadHandler.text;
+            }
+            else
+            {
+                arDisplayLabel.text = "Error: CSV not found in StreamingAssets";
+                yield break;
+            }
+        }
+        else // Standard PC path
+        {
+            if (File.Exists(csvPath))
+            {
+                result = File.ReadAllText(csvPath);
+            }
+        }
+
+        if (!string.IsNullOrEmpty(result))
+        {
+            ParseCSVData(result.Replace("\uFEFF", ""));
+        }
+    }
+
+    void ParseCSVData(string content)
+    {
         string[] lines = content.Split(new[] { '\n', '\r' }, System.StringSplitOptions.RemoveEmptyEntries);
-
         filteredTrains.Clear();
 
-        // Standardize the platform name for comparison
         string cleanPlayerPlatform = playerCurrentPlatform.Replace(" ", "").ToUpper();
 
         for (int i = 1; i < lines.Length; i++)
         {
             string[] columns = lines[i].Split(',');
-
             if (columns.Length > 2)
             {
                 string cleanCSVPlatform = columns[2].Replace(" ", "").ToUpper();
-
                 if (cleanCSVPlatform == cleanPlayerPlatform)
                 {
+                    // Index 1 is Time, Index 3 is Destination/Notes
                     filteredTrains.Add(columns[1] + " - " + columns[3]);
                 }
             }
